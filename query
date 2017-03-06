@@ -1,0 +1,59 @@
+#!/usr/bin/env python
+"""Interact with Salesforce Attachments.
+"""
+import configuration
+
+from simple_salesforce import Salesforce
+import base64
+import getopt
+import json
+import os
+import pathlib
+import pprint
+import requests
+import sys
+
+
+def connect(username, password, security_token):
+    return Salesforce(
+        username=username, password=password, security_token=security_token)
+
+
+def print_help(error=False):
+    help_message = """
+usage: query [OPTIONS] QUERY_STRING
+
+Return CSV results of a Salesforce query.
+
+Options:
+  -h, --help           Display this message and exit.
+""".strip()
+    if error:
+        print(error)
+    print(help_message)
+    sys.exit()
+
+
+def run_query(sf, query):
+    return sf.query(query)
+
+
+def format_response(response):
+    records =  ['"' + '","'.join(record.values()) + '"' for record in response["records"]]
+    return "\n".join(records)
+
+def display_response(response):
+#    formatted = format_response(response)
+#    print(formatted)
+    pprint.pprint(response)
+    
+
+if __name__ == "__main__":
+    raw_opts, args = getopt.gnu_getopt(sys.argv[1:], "h", ["help"])
+    [print_help() for o, a in raw_opts if o in ("-h", "--help")]
+    if len(args) == 0:
+      print_help("ERROR: no query provided")
+    config = configuration.load_config()
+    sf = connect(config["username"], config["password"], config["security_token"])
+    response = run_query(sf, args[0])
+    display_response(response)
