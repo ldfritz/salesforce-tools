@@ -41,14 +41,15 @@ def encode(content):
     return base64.b64encode(content).decode("utf-8")
 
 
-def upload_attachment(sf, args, content=False):
+def upload_attachment(sf, args, description=False, content=False):
     args = validate_upload_args(args)
     payload = {}
 
     payload["Name"] = os.path.basename(args["filename"])
+    payload["ParentId"] = args["parent_id"]
 
-    if "parent_id" in args:
-        payload["ParentId"] = args["parent_id"]
+    if description:
+        payload["Description"] = description
 
     if content:
         payload["body"] = encode(content)
@@ -83,7 +84,7 @@ def download_attachment(sf, args, in_memory=False):
         headers={"Authorization": "Bearer {}".format(sf.session_id)})
 
     if in_memory:
-        return (doc["Name"], response.content)
+        return (doc["Name"], doc["Description"], response.content)
 
     if "filename" in args:
         filename = args["filename"]
@@ -116,9 +117,9 @@ def validate_copy_args(args):
 def copy_attachment(sf, args):
     args = validate_copy_args(args)
     download_args = [args["attachment_id"]]
-    filename, content = download_attachment(sf, download_args, True)
+    filename, description, content = download_attachment(sf, download_args, True)
     upload_args = [filename, args["parent_id"]]
-    return upload_attachment(sf, upload_args, content)
+    return upload_attachment(sf, upload_args, description, content)
 
 
 def move_attachment(sf, args):
