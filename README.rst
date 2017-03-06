@@ -1,8 +1,10 @@
-# Salesforce Tools
+Salesforce Tools
+================
 
 A project with some basic tools for working with Salesforce.
 
-## Configuration
+Configuration
+-------------
 
 These scripts expect credentials in ``$XDG_CONFIG_HOME/salesforce/credentials`` or ``$HOME/.config/salesforce/credentials``.
 The credentials are currently stored as JSON, as follows::
