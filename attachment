@@ -1,0 +1,221 @@
+#!/usr/bin/env python
+"""Interact with Salesforce Attachments.
+"""
+import configuration
+
+from simple_salesforce import Salesforce
+import base64
+import getopt
+import json
+import os
+import pathlib
+import pprint
+import requests
+import sys
+
+
+def connect(username, password, security_token):
+    return Salesforce(
+        username=username, password=password, security_token=security_token)
+
+
+def validate_upload_args(args):
+    results = {}
+
+    if len(args) == 0:
+        print_help("ERROR: no file provided")
+    elif len(args) == 1:
+        print_help("ERROR: no Parent Id provided")
+    elif len(args) > 2:
+        print_help("ERROR: too many arguments provided")
+    results["filename"] = args[0]
+
+    if len(args[1]) != 15 and len(args[1]) != 18:
+        print_help("ERROR: invalid Id")
+    results["parent_id"] = args[1]
+
+    return results
+
+
+def encode(content):
+    return base64.b64encode(content).decode("utf-8")
+
+
+def upload_attachment(sf, args, content=False):
+    args = validate_upload_args(args)
+    payload = {}
+
+    payload["Name"] = os.path.basename(args["filename"])
+
+    if "parent_id" in args:
+        payload["ParentId"] = args["parent_id"]
+
+    if content:
+        payload["body"] = encode(content)
+    else:
+        with open(args["filename"], "rb") as f:
+            payload["body"] = encode(f.read())
+
+    return sf.Attachment.create(payload)["id"]
+
+
+def validate_download_args(args):
+    results = {}
+
+    if len(args) == 0:
+        print_help("ERROR: no Id provided")
+    if len(args[0]) != 15 and len(args[0]) != 18:
+        print_help("ERROR: invalid Id")
+    results["attachment_id"] = args[0]
+
+    if len(args) == 2:
+        results["filename"] = args[1]
+
+    return results
+
+
+def download_attachment(sf, args, in_memory=False):
+    args = validate_download_args(args)
+    doc = sf.Attachment.get(args["attachment_id"])
+    instance = sf.__dict__["sf_instance"]
+    response = requests.get(
+        "https://{}{}".format(instance, doc["Body"]),
+        headers={"Authorization": "Bearer {}".format(sf.session_id)})
+
+    if in_memory:
+        return (doc["Name"], response.content)
+
+    if "filename" in args:
+        filename = args["filename"]
+    else:
+        filename = doc["Name"]
+
+    with open(filename, "wb") as f:
+        f.write(response.content)
+
+    return (filename)
+
+
+def validate_copy_args(args):
+    results = {}
+
+    if len(args) != 2:
+        print_help("ERROR: incorrect number of arguments")
+
+    if len(args[0]) != 15 and len(args[0]) != 18:
+        print_help("ERROR: invalid Attachment Id")
+    results["attachment_id"] = args[0]
+
+    if len(args[1]) != 15 and len(args[1]) != 18:
+        print_help("ERROR: invalid Parent Id")
+    results["parent_id"] = args[1]
+
+    return results
+
+
+def copy_attachment(sf, args):
+    args = validate_copy_args(args)
+    download_args = [args["attachment_id"]]
+    filename, content = download_attachment(sf, download_args, True)
+    upload_args = [filename, args["parent_id"]]
+    return upload_attachment(sf, upload_args, content)
+
+
+def move_attachment(sf, args):
+    temp_args = validate_copy_args(args)
+    old_id = temp_args["attachment_id"]
+
+    new_id = copy_attachment(sf, args)
+    delete_attachment(sf, [old_id])
+
+    return new_id
+
+
+def validate_delete_args(args):
+    results = {}
+
+    if len(args) == 0:
+        print_help("ERROR: no Id provided")
+    elif len(args) > 1:
+        print_help("ERROR: too many Ids")
+    if len(args[0]) != 15 and len(args[0]) != 18:
+        print_help("ERROR: invalid Id")
+    results["attachment_id"] = args[0]
+
+    return results
+
+
+def delete_attachment(sf, args):
+    args = validate_delete_args(args)
+    sf.Attachment.delete(args["attachment_id"])
+    return args["attachment_id"]
+
+
+def print_help(error=False):
+    help_message = """
+usage: attachment COMMAND [OPTIONS] ARGS ...
+
+Commands for interacting with Salesforce Attachments.
+
+Commands:
+
+    upload FILENAME PARENT_ID
+        Upload the given file to Salesforce with the given Parent ID.
+        Its Name will match its filename.
+
+    download ATTACHMENT_ID [FILENAME]
+        Download the given Attachment.  If provided, name it FILENAME.
+        Otherwise, it's filename will match its Name.
+
+    copy ATTACHMENT_ID NEW_PARENT_ID
+        Create a copy of the given Attachment with the given Parent Id.
+
+    move ATTACHMENT_ID NEW_PARENT_ID
+        Move the given Attachment to the given Parent Id.  The moved
+        Attachment generate a new Id.
+
+    delete ATTACHMENT_ID
+        Delete the given Attachment.
+
+Options:
+  -h, --help           Display this message and exit.
+""".strip()
+    if error:
+        print(error)
+    print(help_message)
+    sys.exit()
+
+
+def trimmed_argv():
+    index = [i for i, x in enumerate(sys.argv) if x.endswith("attachment")][0]
+    return sys.argv[index + 1:]
+
+
+def get_command(args):
+    if len(args) == 0:
+        print_help("ERROR: no command provided")
+    commands = ("upload", "download", "copy", "move", "delete")
+    if args[0] not in commands:
+        print_help("ERROR: {} is not a valid command".format(cmd))
+    return args[0]
+
+
+def parse_cli():
+    argv = trimmed_argv()
+    raw_opts, args = getopt.gnu_getopt(argv, "h", ["help"])
+    cmd = get_command(args)
+    [print_help() for o, a in raw_opts if o in ("-h", "--help")]
+    return (cmd, args[1:])
+
+
+def execute_command(cmd, args, config):
+    sf = connect(config["username"], config["password"],
+                 config["security_token"])
+    print(
+        getattr(sys.modules[__name__], "{}_attachment".format(cmd))(sf, args))
+
+
+if __name__ == "__main__":
+    cmd, args = parse_cli()
+    config = configuration.load_config()
+    execute_command(cmd, args, config)
