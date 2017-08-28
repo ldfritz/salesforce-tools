@@ -14,5 +14,6 @@ setuptools.setup(
     author='Luke Fritz',
     author_email='luke@lukeandkrista.com',
     url='https://github.com/ldfritz/salesforce-tools',
-    license=license
+    license=license,
+    packages=setuptools.find_packages(exclude=('tests', 'docs'))
 )
